@@ -1,85 +1,106 @@
 import telebot
 from telebot import types
 
-TOKEN = '7785880031:AAHXamJroQ6FDGdU0vVKPE-Vtd_GkdlVHOo'
+TOKEN = '7785880031:AAGRt7NIit9BwUcXlBk4aqfl09a8Of5SfH0'
 bot = telebot.TeleBot(TOKEN)
 
-user_state = {}  # ذخیره وضعیت کاربر {user_id: مرحله}
+# ساخت حافظه ساده برای ذخیره اطلاعات کاربران (فعلاً داخل رم)
+user_data = {}
 
-services = ["💅 کاشت ناخن", "🌸 ترمیم ناخن", "🎨 طراحی ناخن", "✨ ژلیش"]
-
-# منوی اصلی
-def main_menu():
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add("📅 نوبت‌های من", "🖼 نمونه کار", "📞 ارتباط با من")
-    return markup
-
-# منوی خدمات
-def services_menu():
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    for service in services:
-        markup.add(service)
-    return markup
-
-# مرحله 1: استارت و منوی اصلی
+# استارت اولیه
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    user_state[message.chat.id] = 'main_menu'
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add(types.KeyboardButton("✅ شروع"))
     bot.send_message(
         message.chat.id,
-        "سلام عزیز دل 🌸\nبه سامانه نوبت‌دهی *Samira Nail Art* خوش اومدی!\n\n"
-        "از منوی پایین برای گرفتن نوبت اقدام کن.",
-        reply_markup=main_menu(),
+        f"سلام {message.from_user.first_name} عزیز 🌸\n"
+        "به سامانه نوبت‌دهی *Samira Nail Art* خوش اومدی!\n\n"
+        "برای شروع، لطفاً دکمه «✅ شروع» رو بزن.",
+        reply_markup=markup,
         parse_mode="Markdown"
     )
 
-# هندلر کلی برای پیام‌ها
-@bot.message_handler(func=lambda m: True)
-def handle_message(message):
-    user_id = message.chat.id
-    text = message.text
+# منوی اصلی بعد از "شروع"
+@bot.message_handler(func=lambda m: m.text == "✅ شروع")
+def main_menu(message):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add("📅 نوبت‌های من", "🖼 نمونه کار", "📞 ارتباط با من")
+    bot.send_message(message.chat.id, "از منوی زیر یکی رو انتخاب کن 👇", reply_markup=markup)
+
+# مدیریت منو
+@bot.message_handler(func=lambda m: m.text == "📅 نوبت‌های من")
+def choose_service(message):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add("💅 کاشت ناخن", "🌸 ترمیم ناخن", "🎨 طراحی ناخن", "✨ ژلیش")
+    user_data[message.chat.id] = {"step": "select_service"}
+    bot.send_message(message.chat.id, "کدوم خدمات رو می‌خوای انجام بدی؟", reply_markup=markup)
+
+# انتخاب خدمات
+@bot.message_handler(func=lambda m: user_data.get(m.chat.id, {}).get("step") == "select_service")
+def confirm_service(message):
+    service = message.text
+    if service not in ["💅 کاشت ناخن", "🌸 ترمیم ناخن", "🎨 طراحی ناخن", "✨ ژلیش"]:
+        bot.reply_to(message, "❌ لطفاً یکی از گزینه‌های خدمات رو انتخاب کن.")
+        return
+
+    user_data[m.chat.id]["service"] = service
+    user_data[m.chat.id]["step"] = "confirm_service"
     
-    state = user_state.get(user_id, 'main_menu')
-    
-    if state == 'main_menu':
-        if text == "📅 نوبت‌های من":
-            user_state[user_id] = 'choose_service'
-            bot.send_message(user_id, "لطفاً یکی از خدمات زیر رو انتخاب کن:", reply_markup=services_menu())
-        elif text == "🖼 نمونه کار":
-            bot.send_message(user_id, "نمونه کارها به زودی اضافه می‌شود.")
-        elif text == "📞 ارتباط با من":
-            bot.send_message(user_id, "برای ارتباط با ادمین این شماره را استفاده کنید: 0912xxxxxxx")
-        else:
-            bot.send_message(user_id, "لطفاً یکی از گزینه‌های منو رو انتخاب کن.", reply_markup=main_menu())
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add("✅ تایید", "❌ تغییر خدمات")
+    bot.send_message(message.chat.id, f"شما انتخاب کردید: {service}\nتایید می‌کنی؟", reply_markup=markup)
 
-    elif state == 'choose_service':
-        if text in services:
-            user_state[user_id] = 'confirm_service'
-            user_state[f"{user_id}_service"] = text
-            markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-            btn_yes = types.KeyboardButton("تایید ✅")
-            btn_no = types.KeyboardButton("لغو ❌")
-            markup.add(btn_yes, btn_no)
-            bot.send_message(user_id, f"خدمت {text} انتخاب شده. تایید می‌کنی؟", reply_markup=markup)
-        else:
-            bot.send_message(user_id, "لطفاً یکی از خدمات را از منوی پایین انتخاب کن.", reply_markup=services_menu())
+# تایید خدمات یا بازگشت
+@bot.message_handler(func=lambda m: user_data.get(m.chat.id, {}).get("step") == "confirm_service")
+def service_confirm(message):
+    if message.text == "✅ تایید":
+        user_data[m.chat.id]["step"] = "select_date"
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        markup.add("📅 فردا", "📅 پس‌فردا", "📅 سه‌شنبه")  # تستی، بعداً تقویم واقعی می‌ذاریم
+        bot.send_message(message.chat.id, "تاریخ مورد نظر رو انتخاب کن:", reply_markup=markup)
 
-    elif state == 'confirm_service':
-        if text == "تایید ✅":
-            user_state[user_id] = 'choose_datetime'
-            bot.send_message(user_id, "لطفاً تاریخ و ساعت مورد نظر برای نوبت را به صورت متن وارد کن.\nمثلاً: 1402/03/15 ساعت 14:00")
-        elif text == "لغو ❌":
-            user_state[user_id] = 'choose_service'
-            bot.send_message(user_id, "خدمت انتخابی لغو شد. لطفاً مجدداً یک خدمت انتخاب کن:", reply_markup=services_menu())
-        else:
-            bot.send_message(user_id, "لطفاً فقط تایید یا لغو را انتخاب کن.")
+    elif message.text == "❌ تغییر خدمات":
+        user_data[m.chat.id]["step"] = "select_service"
+        choose_service(message)
+    else:
+        bot.reply_to(message, "❌ لطفاً تایید یا تغییر خدمات رو انتخاب کن.")
 
-    elif state == 'choose_datetime':
-        datetime_text = text
-        service = user_state.get(f"{user_id}_service")
-        # اینجا می‌تونیم ذخیره کنیم (الان فقط پیام می‌دیم)
-        bot.send_message(user_id, f"نوبت برای خدمت {service} در تاریخ و ساعت {datetime_text} ثبت شد.\nامتیاز ۱۰ به حساب شما اضافه شد.")
-        user_state[user_id] = 'main_menu'
-        bot.send_message(user_id, "برای ادامه می‌توانید از منوی اصلی استفاده کنید.", reply_markup=main_menu())
+# انتخاب روز (تست)
+@bot.message_handler(func=lambda m: user_data.get(m.chat.id, {}).get("step") == "select_date")
+def select_time(message):
+    user_data[m.chat.id]["date"] = message.text
+    user_data[m.chat.id]["step"] = "select_time"
+
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add("🕙 10:00", "🕚 11:00", "🕛 12:00", "🕓 16:00", "🕖 18:00")
+    bot.send_message(message.chat.id, f"تاریخ انتخاب‌شده: {message.text}\nحالا ساعت رو انتخاب کن:", reply_markup=markup)
+
+# انتخاب ساعت و پایان
+@bot.message_handler(func=lambda m: user_data.get(m.chat.id, {}).get("step") == "select_time")
+def confirm_appointment(message):
+    time = message.text
+    service = user_data[m.chat.id]["service"]
+    date = user_data[m.chat.id]["date"]
+
+    bot.send_message(
+        message.chat.id,
+        f"📌 نوبت شما ثبت شد:\n"
+        f"🔹 خدمات: {service}\n"
+        f"🔹 تاریخ: {date}\n"
+        f"🔹 ساعت: {time}\n\n"
+        "❤️ مرسی که ما رو انتخاب کردی!\n"
+        "🎁 شما ۱۰ امتیاز گرفتی 🌟"
+    )
+    user_data[m.chat.id] = {}  # پاک‌سازی وضعیت
+
+# نمونه کار و ارتباط با من
+@bot.message_handler(func=lambda m: m.text == "🖼 نمونه کار")
+def samples(message):
+    bot.send_message(message.chat.id, "🔜 بزودی نمونه‌کارها اینجا قرار می‌گیرن.")
+
+@bot.message_handler(func=lambda m: m.text == "📞 ارتباط با من")
+def contact(message):
+    bot.send_message(message.chat.id, "برای هماهنگی مستقیم، به آیدی ادمین پیام بده: @EncryptedHadi")
 
 bot.polling()
